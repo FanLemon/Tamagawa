@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily OKCard purchase history import
+
+[Timer]
+OnCalendar=*-*-* 00:00:00 Asia/Tokyo
+Persistent=true
+Unit=okcard-sync.service
+
+[Install]
+WantedBy=timers.target

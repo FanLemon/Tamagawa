@@ -1,0 +1,29 @@
+# Secrets / local config (README: .env holds DATABASE_URL and OKCard credentials)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Xcode (OKCardSwift)
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.log

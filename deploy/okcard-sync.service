@@ -1,0 +1,9 @@
+[Unit]
+Description=Import OKCard purchase history through the running API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl --fail --silent --show-error --max-time 300 --request POST http://127.0.0.1:3007/okcard_history/sync
+TimeoutStartSec=310

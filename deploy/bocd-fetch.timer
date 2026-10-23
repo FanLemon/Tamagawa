@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily BOCD exchange rate fetch
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 Asia/Shanghai
+Persistent=true
+Unit=bocd-fetch.service
+
+[Install]
+WantedBy=timers.target

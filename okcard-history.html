@@ -1,0 +1,411 @@
+<meta charset="utf-8">
+<title>OKカード購入履歴</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+  /* Layout: single centered column — summary tiles, a daily-spend strip, then a filterable list of shopping trips. */
+  :root {
+    --bg: #f5f8f3;
+    --surface: #ffffff;
+    --surface-2: #eef4ec;
+    --ink: #15231b;
+    --muted: #5d6f64;
+    --faint: #8a9b90;
+    --line: #e3ece0;
+    --accent: #1c8f52;
+    --accent-soft: #e2f2e8;
+    --shadow: 0 1px 2px rgba(20,40,28,.04), 0 6px 20px rgba(20,40,28,.05);
+    --display: "Bricolage Grotesque", "Noto Sans JP", system-ui, sans-serif;
+    --body: "Noto Sans JP", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1512;
+      --surface: #141f19;
+      --surface-2: #1a281f;
+      --ink: #e8f1ea;
+      --muted: #9fb3a6;
+      --faint: #74877c;
+      --line: #243830;
+      --accent: #45cf84;
+      --accent-soft: #15301f;
+      --shadow: 0 1px 2px rgba(0,0,0,.2), 0 6px 20px rgba(0,0,0,.28);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1512;
+    --surface: #141f19;
+    --surface-2: #1a281f;
+    --ink: #e8f1ea;
+    --muted: #9fb3a6;
+    --faint: #74877c;
+    --line: #243830;
+    --accent: #45cf84;
+    --accent-soft: #15301f;
+    --shadow: 0 1px 2px rgba(0,0,0,.2), 0 6px 20px rgba(0,0,0,.28);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding-inline: max(18px, env(safe-area-inset-left, 0px)) max(18px, env(safe-area-inset-right, 0px));
+    padding-block: clamp(28px, 6vw, 56px) 48px;
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* --- header --- */
+  .eyebrow {
+    font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--display); font-weight: 800;
+    font-size: clamp(2.2rem, 7vw, 3.4rem); line-height: 1.02; letter-spacing: -.02em;
+    margin: 0; text-wrap: balance;
+  }
+  .sub { color: var(--muted); margin: 10px 0 0; font-size: .95rem; }
+  .sub b { color: var(--ink); font-weight: 500; }
+
+  /* --- summary tiles --- */
+  .tiles {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; margin-top: 28px;
+  }
+  .tile {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .tile .label { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+  .tile .value { font-family: var(--display); font-weight: 700; font-size: 1.9rem; margin-top: 6px; line-height: 1; letter-spacing: -.01em; }
+  .tile .value .yen { font-size: 1.05rem; color: var(--muted); margin-right: 1px; }
+  .tile.accent .value { color: var(--accent); }
+
+  /* --- daily spend strip --- */
+  .panel {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    padding: 20px; margin-top: 16px; box-shadow: var(--shadow);
+  }
+  .panel h2 {
+    font-family: var(--display); font-size: .95rem; font-weight: 700; margin: 0 0 2px;
+    letter-spacing: .01em;
+  }
+  .panel .note { color: var(--faint); font-size: .8rem; margin: 0 0 16px; }
+  .chart { display: flex; align-items: flex-end; gap: 3px; height: 108px; }
+  .bar { flex: 1 1 0; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; position: relative; min-width: 0; }
+  .bar i {
+    display: block; width: 100%; background: var(--accent-soft); border-radius: 3px 3px 0 0;
+    min-height: 2px; transition: background .15s;
+  }
+  .bar.has i { background: var(--accent); }
+  .bar:hover i { background: var(--ink); }
+  .bar .tip {
+    position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--bg); font-size: .72rem; white-space: nowrap;
+    padding: 4px 8px; border-radius: 7px; opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 5;
+    font-weight: 600;
+  }
+  .bar:hover .tip { opacity: 1; }
+  .axis { display: flex; justify-content: space-between; color: var(--faint); font-size: .72rem; margin-top: 8px; }
+
+  /* --- controls --- */
+  .controls { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .search {
+    flex: 1 1 220px; min-width: 0; display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px;
+  }
+  .search svg { flex: none; color: var(--faint); }
+  .search input {
+    border: 0; background: transparent; color: var(--ink); font: inherit; width: 100%; outline: none;
+  }
+  .search input::placeholder { color: var(--faint); }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    font: inherit; font-size: .85rem; font-weight: 500; cursor: pointer;
+    background: var(--surface); color: var(--muted); border: 1px solid var(--line);
+    border-radius: 999px; padding: 8px 14px; transition: all .12s;
+  }
+  .pill:hover { color: var(--ink); border-color: var(--faint); }
+  .pill[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .pill[aria-pressed="true"],
+  :root:not([data-theme="light"]) .pill[aria-pressed="true"] { color: #07140c; }
+
+  .resultline { margin: 22px 0 10px; color: var(--muted); font-size: .85rem; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+  .linkbtn:hover { text-decoration: underline; }
+
+  /* --- trip list --- */
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .trip { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .trip > .head {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer;
+    padding: 14px 16px; list-style: none;
+  }
+  .trip > .head::-webkit-details-marker { display: none; }
+  .trip > .head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .daybox { flex: none; width: 46px; text-align: center; }
+  .daybox .d { font-family: var(--display); font-weight: 700; font-size: 1.35rem; line-height: 1; }
+  .daybox .w { font-size: .72rem; color: var(--faint); margin-top: 3px; }
+  .daybox .w.sun { color: #d2574e; }
+  .daybox .w.sat { color: #4e86d2; }
+  .meta { flex: 1 1 auto; min-width: 0; }
+  .meta .store { font-weight: 500; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta .when { color: var(--faint); font-size: .78rem; margin-top: 2px; }
+  .amt { flex: none; text-align: right; }
+  .amt .big { font-family: var(--display); font-weight: 700; font-size: 1.2rem; color: var(--accent); }
+  .amt .big .yen { font-size: .8rem; color: var(--muted); font-weight: 600; }
+  .amt .cnt { font-size: .74rem; color: var(--faint); margin-top: 1px; }
+  .chev { flex: none; color: var(--faint); transition: transform .18s; }
+  .trip[open] .chev { transform: rotate(180deg); }
+
+  .items { border-top: 1px dashed var(--line); padding: 6px 16px 14px 76px; }
+  .item { display: flex; gap: 12px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item .name { flex: 1 1 auto; min-width: 0; font-size: .88rem; }
+  .item .name mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 2px; }
+  .item .q { flex: none; color: var(--faint); font-size: .78rem; min-width: 28px; text-align: right; }
+  .item .p { flex: none; font-size: .88rem; min-width: 64px; text-align: right; }
+  .item .p .yen { color: var(--muted); font-size: .72rem; margin-right: 1px; }
+
+  .empty { text-align: center; color: var(--muted); padding: 48px 0; }
+
+  footer { margin-top: 40px; color: var(--faint); font-size: .78rem; text-align: center; }
+
+  @media (max-width: 420px) {
+    .daybox { width: 38px; }
+    .items { padding-left: 16px; }
+    .tile .value { font-size: 1.6rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">OKカード · 購入履歴</p>
+    <h1 id="title">2026年9月</h1>
+    <p class="sub" id="range"></p>
+  </header>
+
+  <section class="tiles" id="tiles" aria-label="集計"></section>
+
+  <section class="panel" aria-label="日別の支出">
+    <h2>日別の支出</h2>
+    <p class="note" id="chartnote"></p>
+    <div class="chart" id="chart"></div>
+    <div class="axis" id="axis"><span>1日</span><span>15日</span><span>30日</span></div>
+  </section>
+
+  <div class="controls">
+    <label class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="q" type="search" placeholder="店舗・商品名で検索" autocomplete="off">
+    </label>
+    <div class="pills" id="pills" role="group" aria-label="店舗で絞り込み"></div>
+  </div>
+
+  <div class="resultline">
+    <span id="count"></span>
+    <button class="linkbtn" id="toggleAll" aria-expanded="false">すべて展開</button>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <footer id="footer">オーケー購入履歴ビューア</footer>
+</div>
+
+<script id="data" type="application/json">{}</script>
+<script>
+(function () {
+  "use strict";
+  var RAW = JSON.parse(document.getElementById("data").textContent);
+  var purchases = (RAW.purchases || []).slice();
+  var YEN = "¥";
+  var WD = ["日", "月", "火", "水", "木", "金", "土"];
+  var yen = function (n) { return YEN + Math.round(n).toLocaleString("en-US"); };
+  var toNum = function (v) { var n = parseFloat(v); return isFinite(n) ? n : 0; };
+  // Calendar fields in Japan time, whatever the browser's time zone. Same rules as
+  // okcard_storage.normalize_purchases: ISO date/time, no zone means Japan time.
+  var JST_MS = 9 * 3600 * 1000;
+  var ISO_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+  var jst = function (t) {
+    var d = new Date(t + JST_MS);  // shifted, so the getUTC* fields are Japan wall-clock time
+    return { t: t, y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(),
+             wd: d.getUTCDay(), h: d.getUTCHours(), mi: d.getUTCMinutes() };
+  };
+  var when = function (s) {
+    var m = ISO_RE.exec(String(s).trim()), t;
+    if (m) {
+      var off = JST_MS;
+      if (m[7] === "Z") off = 0;
+      else if (m[7]) {
+        var hm = m[7].slice(1).replace(":", "");
+        off = (m[7][0] === "-" ? -1 : 1) * (+hm.slice(0, 2) * 60 + +hm.slice(2)) * 60000;
+      }
+      t = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) - off;
+    } else {
+      t = Date.parse(s);
+    }
+    return isFinite(t) ? jst(t) : null;
+  };
+
+  purchases.forEach(function (p) {
+    p._d = when(p.purchase_date);
+    p._price = toNum(p.purchase_price);
+    p._units = (p.items || []).reduce(function (a, it) { return a + toNum(it.item_count); }, 0);
+  });
+  // Unparseable dates sort last and are left out of the daily chart.
+  var key = function (p) { return p._d ? p._d.t : Infinity; };
+  purchases.sort(function (a, b) { var x = key(a), y = key(b); return x < y ? -1 : x > y ? 1 : 0; });
+  var dated = purchases.filter(function (p) { return p._d; });
+
+  var stores = [];
+  purchases.forEach(function (p) { if (stores.indexOf(p.store_name) < 0) stores.push(p.store_name); });
+
+  // month + title: the server's year_month (it selected purchases by Japan-time
+  // month), falling back to the data, then to the current month in Japan
+  var ymm = /^(\d{4})-(\d{2})$/.exec(String(RAW.year_month || ""));
+  var year, mon;
+  if (ymm) { year = +ymm[1]; mon = +ymm[2] - 1; }
+  else { var ref = dated.length ? dated[0]._d : jst(Date.now()); year = ref.y; mon = ref.mo; }
+  var daysInMonth = new Date(Date.UTC(year, mon + 1, 0)).getUTCDate();
+  document.getElementById("title").textContent = year + "年" + (mon + 1) + "月";
+  document.getElementById("footer").textContent =
+    "オーケー購入履歴ビューア · " + year + "年" + (mon + 1) + "月の購入データ";
+  document.getElementById("axis").innerHTML =
+    "<span>1日</span><span>" + Math.round(daysInMonth / 2) + "日</span><span>" + daysInMonth + "日</span>";
+
+  var fmtMD = function (j) { return (j.mo + 1) + "月" + j.d + "日"; };
+  document.getElementById("range").innerHTML = purchases.length
+    ? ((dated.length ? "<b>" + fmtMD(dated[0]._d) + "</b> 〜 <b>" + fmtMD(dated[dated.length - 1]._d) + "</b> ・ " : "") +
+       stores.length + "店舗 ・ " + purchases.length + "回の買い物")
+    : "この月の購入はありません。";
+
+  var state = { store: "all", q: "", allOpen: false };
+
+  var pillsEl = document.getElementById("pills");
+  function makePill(key, label) {
+    var b = document.createElement("button");
+    b.className = "pill"; b.type = "button"; b.textContent = label;
+    b.setAttribute("aria-pressed", key === state.store ? "true" : "false");
+    b.onclick = function () { state.store = key; render(); };
+    pillsEl.appendChild(b);
+  }
+  makePill("all", "すべて");
+  stores.forEach(function (s) { makePill(s, s.replace(/^オーケー[\s　]*/, "")); });
+
+  var qEl = document.getElementById("q");
+  qEl.addEventListener("input", function () { state.q = qEl.value.trim(); render(); });
+
+  var toggleAllEl = document.getElementById("toggleAll");
+  toggleAllEl.onclick = function () {
+    state.allOpen = !state.allOpen;
+    document.querySelectorAll(".trip").forEach(function (d) { d.open = state.allOpen; });
+    toggleAllEl.textContent = state.allOpen ? "すべて閉じる" : "すべて展開";
+    toggleAllEl.setAttribute("aria-expanded", state.allOpen ? "true" : "false");
+  };
+
+  function matches(p) {
+    if (state.store !== "all" && p.store_name !== state.store) return false;
+    if (!state.q) return true;
+    var q = state.q.toLowerCase();
+    if (p.store_name.toLowerCase().indexOf(q) >= 0) return true;
+    return (p.items || []).some(function (it) { return String(it.item_name).toLowerCase().indexOf(q) >= 0; });
+  }
+
+  function hl(name) {
+    if (!state.q) return escapeHtml(name);
+    var q = state.q, i = name.toLowerCase().indexOf(q.toLowerCase());
+    if (i < 0) return escapeHtml(name);
+    return escapeHtml(name.slice(0, i)) + "<mark>" + escapeHtml(name.slice(i, i + q.length)) + "</mark>" + escapeHtml(name.slice(i + q.length));
+  }
+  function escapeHtml(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+
+  function render() {
+    Array.prototype.forEach.call(pillsEl.children, function (b, i) {
+      var key = i === 0 ? "all" : stores[i - 1];
+      b.setAttribute("aria-pressed", key === state.store ? "true" : "false");
+    });
+
+    var shown = purchases.filter(matches);
+
+    // tiles reflect the current filter
+    var total = shown.reduce(function (a, p) { return a + p._price; }, 0);
+    var units = shown.reduce(function (a, p) { return a + p._units; }, 0);
+    var avg = shown.length ? total / shown.length : 0;
+    var tiles = [
+      { label: "合計金額", value: yen(total), accent: true },
+      { label: "買い物回数", value: shown.length + "<span class='yen' style='font-size:.9rem'> 回</span>" },
+      { label: "商品点数", value: units + "<span class='yen' style='font-size:.9rem'> 点</span>" },
+      { label: "1回あたり", value: yen(avg) }
+    ];
+    document.getElementById("tiles").innerHTML = tiles.map(function (t) {
+      var v = t.value.indexOf(YEN) === 0 ? "<span class='yen'>" + YEN + "</span>" + t.value.slice(1) : t.value;
+      return "<div class='tile" + (t.accent ? " accent" : "") + "'><div class='label'>" + t.label +
+        "</div><div class='value tnum'>" + v + "</div></div>";
+    }).join("");
+
+    // daily strip (filtered)
+    var byDay = new Array(daysInMonth + 1).fill(0);
+    shown.forEach(function (p) {
+      if (p._d && p._d.y === year && p._d.mo === mon) byDay[p._d.d] += p._price;
+    });
+    var max = Math.max.apply(null, byDay.concat([1]));
+    var chart = "";
+    for (var d = 1; d <= daysInMonth; d++) {
+      var v = byDay[d], h = Math.round((v / max) * 100);
+      chart += "<div class='bar" + (v > 0 ? " has" : "") + "'>" +
+        (v > 0 ? "<span class='tip'>" + d + "日 " + yen(v) + "</span>" : "") +
+        "<i style='height:" + (v > 0 ? Math.max(h, 4) : 0) + "%'></i></div>";
+    }
+    document.getElementById("chart").innerHTML = chart;
+    var peak = byDay.indexOf(max);
+    document.getElementById("chartnote").textContent =
+      max > 1 ? ("最も使った日：" + peak + "日（" + yen(max) + "）") : "データなし";
+
+    // result line
+    document.getElementById("count").textContent =
+      shown.length + "件" + (state.q ? "（「" + state.q + "」）" : "") + " ・ 合計 " + yen(total);
+
+    // list
+    var list = document.getElementById("list");
+    if (!shown.length) {
+      list.innerHTML = "<div class='empty'>該当する買い物がありません。</div>";
+      return;
+    }
+    list.innerHTML = shown.map(function (p) {
+      var dt = p._d, wd = dt ? dt.wd : -1;
+      var wcls = wd === 0 ? " sun" : wd === 6 ? " sat" : "";
+      var time = dt ? ("0" + dt.h).slice(-2) + ":" + ("0" + dt.mi).slice(-2) : "—";
+      var items = (p.items || []).map(function (it) {
+        return "<div class='item'><div class='name'>" + hl(it.item_name) + "</div>" +
+          "<div class='q tnum'>×" + escapeHtml(it.item_count) + "</div>" +
+          "<div class='p tnum'><span class='yen'>" + YEN + "</span>" + toNum(it.price).toLocaleString("en-US") + "</div></div>";
+      }).join("");
+      return "<details class='trip'" + (state.allOpen ? " open" : "") + ">" +
+        "<summary class='head'>" +
+          "<div class='daybox'><div class='d tnum'>" + (dt ? dt.d : "—") + "</div><div class='w" + wcls + "'>" + (dt ? WD[wd] : "") + "</div></div>" +
+          "<div class='meta'><div class='store'>" + escapeHtml(p.store_name) + "</div><div class='when tnum'>" + time + " ・ " + p._units + "点</div></div>" +
+          "<div class='amt'><div class='big tnum'><span class='yen'>" + YEN + "</span>" + p._price.toLocaleString("en-US") + "</div></div>" +
+          "<svg class='chev' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>" +
+        "</summary>" +
+        "<div class='items'>" + items + "</div>" +
+      "</details>";
+    }).join("");
+  }
+
+  // use <details> native toggle; make the whole summary the toggle (chevron via CSS)
+  render();
+})();
+</script>
