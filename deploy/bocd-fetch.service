@@ -1,9 +1,10 @@
 [Unit]
 Description=Fetch BOCD exchange rates through the running API
-After=network-online.target
+After=network-online.target tamagawa.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/curl --fail --silent --show-error --max-time 120 --request POST http://127.0.0.1:3007/fetch_bocd_exchange_rates
-TimeoutStartSec=130
+# Retries cover a run that fires at boot (Persistent=true) before the API listens.
+ExecStart=/usr/bin/curl --fail --silent --show-error --max-time 120 --retry 3 --retry-delay 20 --retry-connrefused --request POST http://127.0.0.1:3007/fetch_bocd_exchange_rates
+TimeoutStartSec=600

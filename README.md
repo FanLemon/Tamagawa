@@ -165,52 +165,119 @@ commands above. This reloads both the code and environment configuration.
 
 ### Run continuously with systemd
 
-Create a service so the API keeps running after logout and starts after reboot:
+The project runs as one long-running service plus two daily timers. All unit
+files are in `deploy/`:
+
+| Unit | Runs | Does | Installed in |
+|---|---|---|---|
+| `tamagawa.service` | always; restarts on failure and after reboot | serves the API on port 3007 | this step |
+| `okcard-sync.timer` → `okcard-sync.service` | daily 00:00 Japan time | `POST /okcard_history/sync` | step 6 |
+| `bocd-fetch.timer` → `bocd-fetch.service` | daily 10:00 China time | `POST /fetch_bocd_exchange_rates` | step 7 |
+
+The timers only call the running API with `curl`; nothing is scheduled inside
+the API process, so `tamagawa.service` must be running for them to work. If a
+run was missed while the server was off, it runs at the next boot and retries
+until the API is listening.
+
+#### Install the API service
+
+Stop any manual API run first so port 3007 is available. If an earlier setup
+installed the API as `okcard-api.service`, remove it first; it would otherwise
+compete for the port:
 
 ```sh
-sudo nano /etc/systemd/system/okcard-api.service
+sudo systemctl disable --now okcard-api.service
+sudo rm /etc/systemd/system/okcard-api.service
 ```
 
-Paste the following unit, replacing `YOUR_USER` and every `/home/YOUR_USER/OKCard`
-path with your Linux login and the actual absolute clone path. Use an ordinary
-user with access to the checkout and database:
-
-```ini
-[Unit]
-Description=OKCard API
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=YOUR_USER
-WorkingDirectory=/home/YOUR_USER/OKCard
-EnvironmentFile=/home/YOUR_USER/OKCard/.env
-ExecStart=/home/YOUR_USER/OKCard/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 3007
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Stop any manual API run first so port 3007 is available. Then enable and start
-the service:
+Then, as the user who owns the checkout, install the unit with your user name
+and checkout path filled in, and check the printed result:
 
 ```sh
+cd "$HOME/OKCard"
+sed -e "s|/home/YOUR_USER/OKCard|$PWD|g" -e "s|YOUR_USER|$USER|g" deploy/tamagawa.service \
+  | sudo tee /etc/systemd/system/tamagawa.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now okcard-api.service
-sudo systemctl status okcard-api.service --no-pager
-sudo journalctl -u okcard-api.service -n 50 --no-pager
+sudo systemctl enable --now tamagawa.service
+systemctl status tamagawa.service --no-pager
+journalctl -u tamagawa.service -n 50 --no-pager
 ```
+
+The service reads `.env` through `EnvironmentFile`, so you don't need to load it
+into a shell first.
+
+The API has no login and listens on all interfaces (`0.0.0.0:3007`), so anyone
+who can reach that port can read your purchase history. Limit the port to
+trusted devices with a firewall, for example with `ufw` and your own LAN range:
+
+```sh
+sudo ufw allow from 192.168.1.0/24 to any port 3007 proto tcp
+sudo ufw deny 3007/tcp
+```
+
+If you only use the API on the server itself, change `--host 0.0.0.0` to
+`--host 127.0.0.1` in the installed unit instead.
+
+Continue with step 4 (first import), then steps 6 and 7 to enable the timers.
+
+#### Check that everything is running
+
+After steps 6 and 7:
+
+```sh
+systemctl is-active tamagawa.service okcard-sync.timer bocd-fetch.timer     # expect: active ×3
+systemctl is-enabled tamagawa.service okcard-sync.timer bocd-fetch.timer    # expect: enabled ×3
+systemctl list-timers okcard-sync.timer bocd-fetch.timer                    # NEXT / LAST run times
+./after_install.sh                                                          # smoke-test every endpoint
+```
+
+`after_install.sh` calls every endpoint, including a real BOCD fetch and OKCard
+import (`SKIP_SYNC=1` skips the import), and exits non-zero if any check fails.
+Its OKCard checks need at least one successful import (step 4).
+
+#### Confirm the daily jobs ran
+
+```sh
+# Result of the last run: Result=success and ExecMainStatus=0 mean it worked
+systemctl show okcard-sync.service bocd-fetch.service -p Result -p ExecMainStatus -p ExecMainExitTimestamp
+
+# Output of recent runs (a successful sync prints {"fetched":…,"inserted":…})
+journalctl -u okcard-sync.service -u bocd-fetch.service --since "2 days ago" --no-pager
+
+# Data freshness: last_success_at within 24 h (UTC) and last_error null;
+# published_at is the latest BOCD working day
+curl -s http://127.0.0.1:3007/okcard_history/sync_status; echo
+curl -s http://127.0.0.1:3007/latest_jpy_sell; echo
+
+# Anything that failed
+systemctl --failed
+```
+
+To run a job now instead of waiting (the command returns when it finishes):
+
+```sh
+sudo systemctl start okcard-sync.service && journalctl -u okcard-sync.service -n 5 --no-pager
+sudo systemctl start bocd-fetch.service  && journalctl -u bocd-fetch.service  -n 5 --no-pager
+```
+
+Common failures:
+
+- `curl: (7) Failed to connect`: the API isn't running. Check
+  `systemctl status tamagawa.service`.
+- `curl: (22) … 409`: another OKCard sync was running at the same time. The next
+  run catches up.
+- `curl: (22) … 502`: OKCard or BOCD was unreachable or returned an error. Saved
+  data is kept. See `journalctl -u tamagawa.service` for the detail.
+- A timer missing from `list-timers`: it isn't enabled. Run
+  `sudo systemctl enable --now okcard-sync.timer` (or `bocd-fetch.timer`).
 
 ### Restart or update the API
 
 After editing `.env` or application files, restart the API to load the changes:
 
 ```sh
-sudo systemctl restart okcard-api.service
-sudo systemctl status okcard-api.service --no-pager
+sudo systemctl restart tamagawa.service
+systemctl status tamagawa.service --no-pager
 ```
 
 To deploy a Git update, run these commands as the user who owns the checkout:
@@ -223,17 +290,27 @@ git pull --ff-only
 ```
 
 Continue only if the pull, installation, and tests succeed. Follow any new
-migration instructions before restarting with the commands above. If you edit
-the systemd unit itself, run `sudo systemctl daemon-reload` before restarting.
-Verify the running API after each restart:
+migration instructions, then restart and smoke-test:
 
 ```sh
-curl --fail --show-error http://127.0.0.1:3007/okcard_history/sync_status
+sudo systemctl restart tamagawa.service
+./after_install.sh
 ```
 
-To stop the API, use `sudo systemctl stop okcard-api.service`. The separate
-`okcard-sync.service` in step 6 only triggers an import; restarting it does not
-restart the API.
+If an update changes a file in `deploy/`, install it again before restarting:
+repeat the `sed … | sudo tee` command above for `tamagawa.service`, or the `cp`
+command from step 6 or 7 for the timers, then run `sudo systemctl daemon-reload`.
+Restarting a timer or its `.service` does not restart the API.
+
+### Stop or remove
+
+```sh
+sudo systemctl stop tamagawa.service                       # stop until next start/reboot
+sudo systemctl disable --now okcard-sync.timer bocd-fetch.timer tamagawa.service   # stop and remove from boot
+```
+
+To remove the units entirely, run the `disable` command, then delete them from
+`/etc/systemd/system/` and run `sudo systemctl daemon-reload`.
 
 ## 4. Import and verify
 
