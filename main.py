@@ -50,6 +50,21 @@ class BocdExchangeRate(SQLModel, table=True):
     published_at: NaiveDatetime = Field(index=False)
     source_url: str = Field(default=BOCD_EXCHANGE_RATE_URL)
     fetched_at: NaiveDatetime = Field(default_factory=datetime.datetime.utcnow)
+
+
+class DownloadRecord(SQLModel, table=True):
+    __tablename__ = "download_records"
+    __table_args__ = {'extend_existing': True}
+
+    id: Union[int, None] = Field(default=None, primary_key=True, nullable=False)
+    client: Union[str, None] = Field(default=None, index=False)
+    ip_address: Union[str, None] = Field(default=None, index=False)
+    created_at: NaiveDatetime = Field(default_factory=datetime.datetime.utcnow)
+
+
+class DownloadRecordCreate(SQLModel):
+    client: Union[str, None] = None
+    ip_address: Union[str, None] = None
     
 
 # Database settings come from the environment (DATABASE_URL in .env; see README).
@@ -476,6 +491,71 @@ def read_okcard_history(
     return HTMLResponse(render_okcard_html(year_month, month))
 
 
+
+def _get_client_ip(request: Request) -> Union[str, None]:
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        first_ip = forwarded_for.split(",")[0].strip()
+        if first_ip:
+            return first_ip
+    return request.client.host if request.client else None
+
+
+@app.post("/download_record")
+def create_download_record(
+    session: SessionDep,
+    request: Request,
+    record: Union[DownloadRecordCreate, None] = None,
+    user_agent: Annotated[Union[str, None], Header()] = None,
+) -> DownloadRecord:
+    db_record = DownloadRecord(
+        client=user_agent or (record.client if record else None),
+        ip_address=_get_client_ip(request),
+    )
+    session.add(db_record)
+    session.commit()
+    session.refresh(db_record)
+    return db_record
+
+
+@app.get("/get_download_records")
+def read_download_records(
+    session: SessionDep,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+) -> List[DownloadRecord]:
+    download_records = session.exec(
+        select(DownloadRecord)
+        .order_by(DownloadRecord.id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return download_records
+
+
+@app.get("/get_download_records_count")
+def read_download_records_count(session: SessionDep) -> int:
+    downloads_count = session.exec(select(func.count(DownloadRecord.id))).one()
+    return downloads_count
+
+
+@app.get("/download_record/{record_id}")
+def read_download_record(record_id: int, session: SessionDep) -> DownloadRecord:
+    record = session.get(DownloadRecord, record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="DownloadRecord not found")
+    return record
+
+
+@app.delete("/download_record/{record_id}")
+def delete_download_record(record_id: int):
+    raise HTTPException(status_code=403, detail="DownloadRecord delete is disabled")
+
+
 if __name__ == "__main__":
     # Local development only (auto-reload); deployments run uvicorn via systemd.
     uvicorn.run("main:app", host="127.0.0.1", port=3007, reload=True)
+
