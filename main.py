@@ -2,6 +2,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, status, Depends, Query, Header
 from fastapi.responses import HTMLResponse
+from pydantic import NaiveDatetime
 from sqlmodel import Field, Session, SQLModel, create_engine, select, func
 from sqlalchemy.exc import SQLAlchemyError
 import okcard_storage
@@ -18,6 +19,7 @@ import os
 import re
 import threading
 import urllib.error
+import ssl
 import urllib.request
 
 
@@ -45,9 +47,9 @@ class BocdExchangeRate(SQLModel, table=True):
     fx_buy: Decimal = Field(max_digits=12, decimal_places=4)
     sell: Decimal = Field(max_digits=12, decimal_places=4)
     middle: Decimal = Field(max_digits=12, decimal_places=4)
-    published_at: datetime.datetime = Field(index=False)
+    published_at: NaiveDatetime = Field(index=False)
     source_url: str = Field(default=BOCD_EXCHANGE_RATE_URL)
-    fetched_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    fetched_at: NaiveDatetime = Field(default_factory=datetime.datetime.utcnow)
     
 
 # Database settings come from the environment (DATABASE_URL in .env; see README).
@@ -116,11 +118,13 @@ def parse_bocd_exchange_rates(html: str) -> List[BocdExchangeRate]:
 
 
 def fetch_bocd_exchange_rate_html() -> str:
+    ssl_context = ssl.create_default_context()
+    ssl_context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0x4)
     request = urllib.request.Request(
         BOCD_EXCHANGE_RATE_URL,
         headers={"User-Agent": "Mozilla/5.0 bocd-service/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
         content = response.read()
         charset = response.headers.get_content_charset() or "utf-8"
         try:
